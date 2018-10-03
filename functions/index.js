@@ -14,23 +14,20 @@ const HASH_SIZE = 256;
 // function: login, accepts username and password, returns token or err
 // make sure I change LOCATION (see callable functions firebase)
 exports.getToken = functions.https.onCall((data, context) => {
-    var username = data.username;
-    username = username.replace(/[^A-Za-z0-9]/g, "");
-    if (username === "") {
-        console.log("invalid username");
-        return "";
-    }
+    const username = data.username;
     var password = data.password;
     console.log("auth:", context.auth);
 
-    return admin.database().ref("/users/" + username).once("value")
+    return admin.database().ref("/users/").child(username).once("value")
         .then((user_details) => {
             if (user_details === null) {
                 console.log("user does not exist");
                 return "";
             }
-            const actual_password = user_details.child("password").val();
-            if (actual_password !== password) {
+            const actual_passHash = user_details.child("passHash").val();
+            const actual_salt = user_details.child("salt").val();
+            const passHash = hash_password(password, actual_salt);
+            if (actual_passHash !== passHash) {
                 console.log("incorrect password");
                 return "";
             }
@@ -52,15 +49,11 @@ exports.register = functions.https.onCall((data, context) => {
     const username = data.username;
     const password = data.password;
     const user_type = data.type;
-    if (context.token.type === User_Types.ADMIN) {
-        // can do anything
-    } else if (context.token.type === User_Types.MANAGER) {
+    if (context.auth.token.type === User_Types.MANAGER) {
         if (user_type !== User_Types.EMPLOYEE) {
             return false;
         }
-    } else if (context.token.type === User_Types.EMPLOYEE) {
-        return false;
-    } else {
+    } else if (context.token.type !== User_Types.ADMIN) {
         return false;
     }
     const user_salt = randomBytes(HASH_SIZE);
@@ -70,7 +63,7 @@ exports.register = functions.https.onCall((data, context) => {
         passHash: user_passHash,
         type: user_type, 
     };
-    admin.database().ref("/users/").child(username).transaction((data) => {
+    return admin.database().ref("/users/").child(username).transaction((data) => {
         if (data !== null) {
             return undefined;
         }
@@ -84,3 +77,13 @@ exports.register = functions.https.onCall((data, context) => {
 function hash_password(password, salt) {
     return crypto.pbkdf2Sync(password, salt, 10000, HASH_SIZE, "sha1");
 }
+
+// TODO: location csv -> database
+// You can choose to upload the csv file and process it within Firebase Functions, or you can do
+// some pre-processing on the app and use the pre-processed results as a parameter.
+// The function should check to make sure whoever is trying to use the function is an admin.
+
+// TODO: edit location data in the database
+// We can can either provide editting functionality, OR just use the previous function to overwrite
+// all previous location data.
+
