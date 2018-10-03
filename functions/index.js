@@ -49,11 +49,13 @@ exports.register = functions.https.onCall((data, context) => {
     const username = data.username;
     const password = data.password;
     const user_type = data.type;
-    if (context.auth.token.type === User_Types.MANAGER) {
+    const caller_type = context.auth.token.type;
+
+    if (caller_type === User_Types.MANAGER) {
         if (user_type !== User_Types.EMPLOYEE) {
             return false;
         }
-    } else if (context.token.type !== User_Types.ADMIN) {
+    } else if (caller_type !== User_Types.ADMIN) {
         return false;
     }
     const user_salt = randomBytes(HASH_SIZE);
