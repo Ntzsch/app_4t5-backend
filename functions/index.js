@@ -1,5 +1,6 @@
 const functions = require("firebase-functions");
-const admin = require("firebase-admin")
+const admin = require("firebase-admin");
+const crypto = require("crypto");
 
 admin.initializeApp();
 
@@ -26,14 +27,13 @@ exports.getToken = functions.https.onCall((data, context) => {
             }
             const actual_passHash = user_details.child("passHash").val();
             const actual_salt = user_details.child("salt").val();
-            const passHash = hash_password(password, actual_salt);
+            const passHash = hash_password(password, actual_salt).toString("base64");
             if (actual_passHash !== passHash) {
                 console.log("incorrect password");
                 return "";
             }
             const user_type = user_details.child("type").val();
-            console.log("user_type:", user_type);
-            console.log("user_type type:", typeof user_type);
+            console.log("SUCCESS! user_type:", user_type);
             const claims = {
                 type: user_type,
             };
@@ -58,24 +58,24 @@ exports.register = functions.https.onCall((data, context) => {
     } else if (caller_type !== User_Types.ADMIN) {
         return false;
     }
-    const user_salt = randomBytes(HASH_SIZE);
-    const user_passHash = hash_password(password, salt);
+    const user_salt = crypto.randomBytes(HASH_SIZE).toString("base64");
+    const user_passHash = hash_password(password, user_salt);
     const user_data = {
-        salt: user_salt,
-        passHash: user_passHash,
+        salt: user_salt.toString("base64"),
+        passHash: user_passHash.toString("base64"),
         type: user_type, 
     };
     return admin.database().ref("/users/").child(username).transaction((data) => {
-        if (data !== null) {
-            return undefined;
-        }
-        console.log(data);
-        return user_data;
-    }).then((committed, snapshot) => {
-        return committed;
-    });
+                if (data !== null) {
+                    return undefined;
+                }
+                return user_data;
+            }).then((snapshot, committed) => {
+                return committed;
+            });
 });
 
+// hash_password(password: string, salt: string) -> Buffer
 function hash_password(password, salt) {
     return crypto.pbkdf2Sync(password, salt, 10000, HASH_SIZE, "sha1");
 }
@@ -124,3 +124,22 @@ exports.locationCSVToDb = functions.https.onCall((data, context) => {
 // We can can either provide editting functionality, OR just use the previous function to overwrite
 // all previous location data.
 
+
+exports.addInventoryEntry = functions.https.onCall((data, context) => {
+    const timeStamp = data.username;
+    const caller_type = context.auth.token.type;
+
+    if (caller_type === null) {
+        return false;
+    } 
+    const inventory_entry_data = {
+        "timestamp": data.timeStamp,
+        "location": data.location,
+        "smallDescription": data.smallDescription,
+        "fullDescription": data.fullDescription,
+        "value": data.value,
+        "category": data.category
+    };
+    admin.database().ref("/inventory/").push(inventory_entry_data);
+    return true;
+});
